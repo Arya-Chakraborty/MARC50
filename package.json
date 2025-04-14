@@ -5,11 +5,11 @@
   "scripts": {
     "dev": "concurrently \"npm run next-dev\" \"npm run flask-dev\"",
     "next-dev": "next dev",
-    "flask-dev": "pip install -r api/requirements.txt && python -m flask --app api/index run -p 5328",
+    "flask-dev": "python -m flask --app api/index run -p 5328",
     "build": "next build",
     "start": "next start",
-    "install-deps": "pip install -r api/requirements.txt && npm install",
-    "start-production": "pip install -r api/requirements.txt && concurrently \"python api/index.py\" \"next start\""
+    "install-deps": "python -m venv venv && . venv/bin/activate && pip install -r api/requirements.txt && npm install",
+    "start-production": ". venv/bin/activate && concurrently \"python api/index.py\" \"next start\""
   },
   "dependencies": {
     "@types/node": "20.1.4",
