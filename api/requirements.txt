@@ -4,3 +4,5 @@ padelpy==0.1.16
 pandas==2.2.2
 joblib==1.4.2
 gunicorn==21.2.0 
+scikit-learn==1.4.0
+numpy==1.26.4 

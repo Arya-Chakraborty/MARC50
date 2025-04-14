@@ -3,7 +3,10 @@ from padelpy import from_smiles
 import pandas as pd
 from joblib import load
 import os
+import sklearn
 from flask_cors import CORS
+
+
 app = Flask(__name__)
 
 CORS(app, resources={
