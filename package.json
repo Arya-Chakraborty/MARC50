@@ -9,7 +9,7 @@
     "build": "next build",
     "start": "next start",
     "install-deps": "pip install -r api/requirements.txt && npm install",
-    "start-production": "concurrently \"python api/index.py\" \"next start\""
+    "start-production": "pip install -r api/requirements.txt && concurrently \"python api/index.py\" \"next start\""
   },
   "dependencies": {
     "@types/node": "20.1.4",
