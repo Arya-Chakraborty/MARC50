@@ -1,4 +1,5 @@
-FROM node:18-bullseye
+# Stage 1: Build
+FROM node:18-bullseye as builder
 
 # Install Python and Java
 RUN apt-get update && \
@@ -8,7 +9,6 @@ RUN apt-get update && \
     python3-venv \
     openjdk-17-jre-headless
 
-# Set up the project
 WORKDIR /app
 COPY . .
 
@@ -18,9 +18,17 @@ RUN python3 -m venv venv && \
     pip install --upgrade pip && \
     pip install -r api/requirements.txt
 
-# Install Node dependencies
+# Install Node dependencies and build
 RUN npm install && \
     npm run build
 
-# Runtime command
-CMD . venv/bin/activate && npm run start-production
+# Stage 2: Runtime
+FROM node:18-bullseye-slim
+
+WORKDIR /app
+COPY --from=builder /app .
+
+# Only install production dependencies
+RUN npm install --omit=dev
+
+CMD [ "npm", "run", "start-production" ]
