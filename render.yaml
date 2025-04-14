@@ -3,8 +3,11 @@ services:
     name: next-flask-app
     runtime: node
     buildCommand: |
+      sudo apt-get update && 
+      sudo apt-get install -y openjdk-17-jre && 
       python -m venv venv && 
       . venv/bin/activate && 
+      pip install --upgrade pip && 
       pip install -r api/requirements.txt && 
       npm install && 
       npm run build
