@@ -2,9 +2,7 @@ services:
   - type: web
     name: next-flask-app
     runtime: node
-    buildCommand: |
-      npm run install-deps &&
-      npm run build
+    buildCommand: npm install && npm run build
     startCommand: npm run start-production
     envVars:
       - key: FLASK_PORT
