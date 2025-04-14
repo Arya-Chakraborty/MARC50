@@ -3,4 +3,4 @@ flask-cors==4.0.0
 padelpy==0.1.16
 pandas==2.2.2
 joblib==1.4.2
-pathlib==1.0.1
+gunicorn==21.2.0 

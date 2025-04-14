@@ -3,12 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "flask-dev": "pip install -r api/requirements.txt && python -m flask --app api/index run -p 5328",
-    "next-dev": "next dev",
-    "dev": "concurrently \"npm run next-dev\" \"npm run flask-dev\"",
     "build": "next build",
-    "start-with-flask": "concurrently \"flask run -p 5328\" \"next start\"",
-    "start": "next start"
+    "start": "next start",
+    "flask-prod": "python api/index.py"
   },
   "dependencies": {
     "@types/node": "20.1.4",

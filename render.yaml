@@ -1,11 +1,16 @@
 services:
   - type: web
-    name: next-flask-app
+    name: your-app
     runtime: node
-    buildCommand: npm install && npm run build
-    startCommand: npm run start-with-flask
+    buildCommand: |
+      pip install -r api/requirements.txt && 
+      npm install && 
+      npm run build
+    startCommand: |
+      python api/index.py & 
+      npm run start
     envVars:
       - key: FLASK_PORT
-        value: 5328
+        value: "5328"
       - key: NEXT_PUBLIC_API_URL
-        value: /api  # Proxy to Flask backend
+        value: "/api"
