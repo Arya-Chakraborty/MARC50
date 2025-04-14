@@ -1,14 +1,11 @@
 services:
   - type: web
-    name: your-app
+    name: next-flask-app
     runtime: node
     buildCommand: |
-      pip install -r api/requirements.txt && 
-      npm install && 
+      npm run install-deps &&
       npm run build
-    startCommand: |
-      python api/index.py & 
-      npm run start
+    startCommand: npm run start-production
     envVars:
       - key: FLASK_PORT
         value: "5328"
