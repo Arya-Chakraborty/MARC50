@@ -35,9 +35,7 @@ def predict():
     try:
         descriptor_dict = from_smiles(
                             smiles,
-                            timeout=300,
-                            java_max_heap_size="384m",  # Must be <400MB on free tier
-                            threads=1  # Limit CPU usage
+                            timeout=300
                         )
         filtered = {key: descriptor_dict.get(key, 0.0) for key in required_descriptors}
         df = pd.DataFrame([filtered])
