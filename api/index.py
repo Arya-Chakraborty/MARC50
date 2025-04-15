@@ -33,7 +33,12 @@ def predict():
     data = request.get_json()
     smiles = data.get("compound")
     try:
-        descriptor_dict = from_smiles(smiles)
+        descriptor_dict = from_smiles(
+                            smiles,
+                            timeout=300,
+                            java_max_heap_size="384m",  # Must be <400MB on free tier
+                            threads=1  # Limit CPU usage
+                        )
         filtered = {key: descriptor_dict.get(key, 0.0) for key in required_descriptors}
         df = pd.DataFrame([filtered])
         prediction = clf.predict(df)
