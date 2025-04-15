@@ -8,4 +8,5 @@ services:
       - key: FLASK_PORT
         value: "5328"
       - key: NEXT_PUBLIC_API_URL
-        value: "/api"
+        value: "http://0.0.0.0:5328/api"
+    healthCheckPath: /health
