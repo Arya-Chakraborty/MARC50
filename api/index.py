@@ -33,10 +33,7 @@ def predict():
     data = request.get_json()
     smiles = data.get("compound")
     try:
-        descriptor_dict = from_smiles(
-                            smiles,
-                            timeout=300
-                        )
+        descriptor_dict = from_smiles(smiles)
         filtered = {key: descriptor_dict.get(key, 0.0) for key in required_descriptors}
         df = pd.DataFrame([filtered])
         prediction = clf.predict(df)
