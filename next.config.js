@@ -3,7 +3,8 @@ module.exports = {
   rewrites: async () => [
     {
       source: '/api/:path*',
-      destination: `http://localhost:${process.env.FLASK_PORT || 5328}/api/:path*`,
+      // Explicitly use IPv4 loopback address
+      destination: `http://127.0.0.1:${process.env.FLASK_PORT || 5328}/api/:path*`, 
     },
   ],
 };
