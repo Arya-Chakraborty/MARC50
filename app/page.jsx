@@ -39,7 +39,7 @@ export default function Home() {
         setResult(`Error: ${data.error || 'Unknown error'}`);
       }
     } catch (err) {
-      setResult('Connection error - ensure server is running');
+      setResult(err);
     } finally {
       setIsLoading(false);
     }
