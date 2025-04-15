@@ -38,10 +38,12 @@ RUN npm install --no-package-lock && \
 # Stage 2: Runtime - Create the final, smaller image
 FROM node:18-bullseye-slim
 
-# Install Python 3 runtime needed by the Flask API script
+# Install Python 3 AND Java runtime needed by the Flask API script (for padelpy)
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends python3 && \
-    # Clean up apt cache
+    apt-get install -y --no-install-recommends \
+        python3 \
+        openjdk-17-jre-headless && \ 
+    # Clean up apt cache
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
