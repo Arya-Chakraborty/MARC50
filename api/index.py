@@ -208,9 +208,9 @@ def predict():
                         median_prediction = float(np.median(all_reg_predictions_np))
 
                         all_regression_results[smiles_string] = {
-                            "regression_pIC50_median": median_prediction,
-                            "regression_pIC50_lower_bound": lower_bound,
-                            "regression_pIC50_upper_bound": upper_bound,
+                            "regression_AC50_median": median_prediction,
+                            "regression_AC50_lower_bound": lower_bound,
+                            "regression_AC50_upper_bound": upper_bound,
                             "confidence_interval_percentage": percentage,
                             "num_regression_models_used": len(all_reg_predictions_np)
                         }

@@ -1,124 +1,243 @@
 "use client"
-import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { useState, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import * as XLSX from 'xlsx'; // For parsing Excel files
+import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip as RechartsTooltip } from 'recharts';
 
-const MAX_COMPOUNDS = 20; // Limit for compounds per request
+// --- Configuration ---
+const MAX_COMPOUNDS = 20;
+const API_URL = 'http://127.0.0.1:5328/api/predict'; // Ensure this matches your backend
+
+// --- Helper Components / Icons ---
+const IconSun = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-6.364-.386l1.591-1.591M3 12h2.25m.386-6.364l1.591 1.591" />
+  </svg>
+);
+
+const IconMoon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
+  </svg>
+);
+
+const IconUpload = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 mr-2">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+  </svg>
+);
+
+const CHART_COLORS = {
+  Activator: '#10B981', // Emerald-500
+  Inhibitor: '#F59E0B', // Amber-500
+  Decoy: '#3B82F6',     // Blue-500
+  Error: '#EF4444',     // Red-500
+};
+
+// Define the order for sorting
+const TYPE_ORDER = {
+  'Activator': 1,
+  'Inhibitor': 2,
+  'Decoy': 3,
+  'Error': 4
+};
 
 export default function Home() {
-  const [textareaValue, setTextareaValue] = useState(''); // For textarea input
+  const [textareaValue, setTextareaValue] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
   const [fileName, setFileName] = useState('');
   const [percentage, setPercentage] = useState(95);
-  const [result, setResult] = useState(null); // Will store the backend's JSON response object
+  const [results, setResults] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [inputError, setInputError] = useState(''); // For frontend validation errors
-  const [particles, setParticles] = useState([]);
+  const [inputError, setInputError] = useState('');
+  const [theme, setTheme] = useState('dark');
+  const [tableData, setTableData] = useState([]);
+  const [chartData, setChartData] = useState([]);
+  const [particles, setParticles] = useState([]); // Particle state from original code
 
+  // Particle effect from original code
   useEffect(() => {
-    const newParticles = Array.from({ length: 20 }).map((_, i) => ({
+    const newParticles = Array.from({ length: 30 }).map((_, i) => ({ // Increased particle count
       id: i, x: Math.random() * 100, y: Math.random() * 100,
-      size: Math.random() * 3 + 1, delay: Math.random() * 5
+      size: Math.random() * 2.5 + 0.5, // Slightly smaller max size
+      delay: Math.random() * 7 + 3, // Longer, more varied delays
+      duration: Math.random() * 10 + 10 // Longer, more varied durations
     }));
     setParticles(newParticles);
   }, []);
 
-  const readFileContent = (file) => {
+
+  useEffect(() => {
+    // Initialize theme from localStorage or default to dark
+    const savedTheme = localStorage.getItem('theme') || 'dark';
+    setTheme(savedTheme);
+    if (savedTheme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, []);
+
+  const toggleTheme = () => {
+    const newTheme = theme === 'light' ? 'dark' : 'light';
+    setTheme(newTheme);
+    localStorage.setItem('theme', newTheme);
+    if (newTheme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  };
+
+  // Transform results for table and chart
+  useEffect(() => {
+    if (results && results.classification_results) {
+      // Convert results to table data first
+      const newTableData = Object.entries(results.classification_results).map(([smiles, classification]) => {
+        let AC50Display = 'N/A';
+        let rawPurityData = {};
+
+        if (classification === 'Activator' && results.regression_results && results.regression_results[smiles]) {
+          const regData = results.regression_results[smiles];
+          if (regData.error) {
+            AC50Display = regData.error;
+          } else {
+            AC50Display = `${regData.regression_AC50_median.toFixed(2)} [${regData.regression_AC50_lower_bound.toFixed(2)} – ${regData.regression_AC50_upper_bound.toFixed(2)}] (${regData.confidence_interval_percentage}%)`;
+            rawPurityData = {
+              median: regData.regression_AC50_median,
+              lower: regData.regression_AC50_lower_bound,
+              upper: regData.regression_AC50_upper_bound,
+              ci_percentage: regData.confidence_interval_percentage,
+              models_used: regData.num_regression_models_used
+            };
+          }
+        }
+        return {
+          smiles: smiles.startsWith("EMPTY_INPUT_") ? "(Empty Input)" : smiles,
+          type: classification,
+          AC50: AC50Display,
+          _rawPurityData: rawPurityData // For potential future use (e.g. sorting, filtering)
+        };
+      });
+
+      // Sort table data by type (Activator -> Inhibitor -> Decoy -> Error)
+      newTableData.sort((a, b) => {
+        const orderA = TYPE_ORDER[a.type] || 999;
+        const orderB = TYPE_ORDER[b.type] || 999;
+        return orderA - orderB;
+      });
+      setTableData(newTableData);
+
+      // Prepare chart data
+      const counts = { Activator: 0, Inhibitor: 0, Decoy: 0, Error: 0 };
+      Object.values(results.classification_results).forEach(classification => {
+        if (counts[classification] !== undefined) {
+          counts[classification]++;
+        } else if (String(classification).toLowerCase().includes("error")) {
+          counts.Error++;
+        } else {
+          // Map any other classifications to Decoy
+          counts.Decoy = (counts.Decoy || 0) + 1;
+        }
+      });
+      
+      const newChartData = Object.entries(counts)
+        .filter(([, value]) => value > 0)
+        .map(([name, value]) => ({ name, value }));
+      setChartData(newChartData);
+
+    } else {
+      setTableData([]);
+      setChartData([]);
+    }
+  }, [results]);
+
+
+  const readFileContent = useCallback((file) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (e) => resolve({ 
         content: e.target.result, 
         isBinary: !file.name.toLowerCase().endsWith('.csv') && file.type !== 'text/csv' 
       });
-      reader.onerror = (err) => reject(err);
-
-      // Heuristic: read CSV as text, others as binary for XLSX
+      reader.onerror = (err) => reject(new Error(`File reading error: ${err.message}`));
+      
       if (file.name.toLowerCase().endsWith('.csv') || file.type === 'text/csv') {
         reader.readAsText(file);
       } else {
-        reader.readAsBinaryString(file); // XLSX prefers binary string
+        reader.readAsBinaryString(file);
       }
     });
-  };
+  }, []);
 
-  const parseFileContent = (fileContent, isBinary, fileName) => {
+  const parseFileContent = useCallback((fileContent, isBinary, fileName) => {
     let smilesFromFile = [];
     try {
-      // Primary attempt with XLSX for Excel and well-formed CSVs
-      const workbook = XLSX.read(fileContent, { type: isBinary ? 'binary' : 'string' });
+      const workbook = XLSX.read(fileContent, { type: isBinary ? 'binary' : 'string', cellNF: false, cellDates: false });
       const sheetName = workbook.SheetNames[0];
-      if (!sheetName) throw new Error("No sheets found in the Excel file.");
+      if (!sheetName) throw new Error("No sheets found in the file.");
       const worksheet = workbook.Sheets[sheetName];
       const jsonSheet = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: true, blankrows: false });
 
       if (jsonSheet.length > 0) {
         let startIndex = 0;
-        const firstCellFirstRow = String(jsonSheet[0][0] || "").trim().toLowerCase();
-        // Basic header detection (if first cell of first row looks like a header and not a SMILES)
+        const firstRowFirstCell = String(jsonSheet[0][0] || "").trim().toLowerCase();
         if (jsonSheet.length > 1 && 
-            (firstCellFirstRow.includes("smiles") || firstCellFirstRow.includes("compound")) &&
-            firstCellFirstRow.length < 50 ) {
+            (firstRowFirstCell.includes("smiles") || firstRowFirstCell.includes("compound") || firstRowFirstCell.includes("molecule")) &&
+            firstRowFirstCell.length < 50) {
           startIndex = 1;
         }
         
         smilesFromFile = jsonSheet.slice(startIndex)
-          .map(row => (row && row[0]) ? String(row[0]).trim() : "") // Get first cell, convert to string, trim
-          .filter(s => s !== "" && s.length > 2); // Filter out empty strings and very short strings
+          .map(row => (row && row[0]) ? String(row[0]).trim() : "")
+          .filter(s => s && s.length > 2 && !s.toLowerCase().includes("smiles") && !s.toLowerCase().includes("compound")); // More robust filtering
       }
     } catch (error) {
       console.error("Error processing file with XLSX:", error);
-      // Fallback for simple CSV if XLSX fails and it was read as text
       if (!isBinary && fileName.toLowerCase().endsWith('.csv')) { 
-        console.log("Attempting fallback CSV parsing for:", fileName);
-        const rows = fileContent.split(/\r?\n/); // Split by newline
+        const rows = fileContent.split(/\r?\n/);
         let startIndex = 0;
         if (rows.length > 0) {
-          const firstCellFirstRow = rows[0].split(/[,;\t]/)[0].trim().toLowerCase();
+          const firstRowFirstCell = rows[0].split(/[,;\t]/)[0].trim().toLowerCase();
           if (rows.length > 1 && 
-              (firstCellFirstRow.includes("smiles") || firstCellFirstRow.includes("compound")) &&
-              firstCellFirstRow.length < 50) {
+              (firstRowFirstCell.includes("smiles") || firstRowFirstCell.includes("compound") || firstRowFirstCell.includes("molecule")) &&
+              firstRowFirstCell.length < 50 ) {
             startIndex = 1;
           }
           smilesFromFile = rows.slice(startIndex)
             .map(row => row.split(/[,;\t]/)[0] ? row.split(/[,;\t]/)[0].trim() : "")
-            .filter(s => s !== "" && s.length > 2);
+            .filter(s => s && s.length > 2 && !s.toLowerCase().includes("smiles") && !s.toLowerCase().includes("compound"));
         }
       } else {
-        throw new Error("Could not parse the file. Ensure it's a valid Excel (xlsx, xls) or CSV with SMILES in the first column.");
+        throw new Error("Could not parse file. Ensure SMILES are in the first column of a valid Excel (xlsx, xls) or CSV file.");
       }
     }
+    if (smilesFromFile.length === 0 && jsonSheet && jsonSheet.length > 0) {
+        // If no SMILES were extracted but file had rows, it might be a format issue or no valid SMILES
+        console.warn("File parsed but no valid SMILES extracted. Check first column and header logic.");
+    }
     return smilesFromFile;
-  };
+  }, []);
 
   const handleFileChange = (event) => {
     const file = event.target.files[0];
     if (file) {
-      // Check file type
       const allowedTypes = ['.csv', '.xls', '.xlsx'];
       const fileExtension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
       if (!allowedTypes.includes(fileExtension)) {
-        setInputError('Invalid file type. Please upload a CSV or Excel file.');
-        setSelectedFile(null);
-        setFileName('');
-        event.target.value = null; // Reset file input
+        setInputError('Invalid file type. Please upload CSV, XLS, or XLSX.');
+        setSelectedFile(null); setFileName(''); event.target.value = null;
         return;
       }
-      setSelectedFile(file);
-      setFileName(file.name);
-      setTextareaValue(''); // Clear textarea when a file is selected
-      setInputError('');
-      setResult(null);
+      setSelectedFile(file); setFileName(file.name);
+      setTextareaValue(''); setInputError(''); setResults(null);
     } else {
-      setSelectedFile(null);
-      setFileName('');
+      setSelectedFile(null); setFileName('');
     }
   };
 
   const handleSubmit = async () => {
-    setIsLoading(true);
-    setResult(null); // Clear previous API results
-    setInputError(''); // Clear previous input errors
-
+    setIsLoading(true); setResults(null); setInputError('');
     let smilesToProcess = [];
 
     if (selectedFile) {
@@ -126,239 +245,276 @@ export default function Home() {
         const fileData = await readFileContent(selectedFile);
         smilesToProcess = parseFileContent(fileData.content, fileData.isBinary, selectedFile.name);
         if (smilesToProcess.length === 0) {
-          setInputError("No valid SMILES strings found in the uploaded file, or the file is empty/incorrectly formatted. Please check the file content (SMILES in the first column).");
-          setIsLoading(false);
-          return;
+          setInputError("No valid SMILES found in file. Check format (SMILES in first column, optional header).");
+          setIsLoading(false); return;
         }
       } catch (error) {
-        setInputError(error.message || "Failed to process the uploaded file.");
-        setIsLoading(false);
-        return;
+        setInputError(error.message || "Failed to process file.");
+        setIsLoading(false); return;
       }
     } else if (textareaValue.trim() !== "") {
-      smilesToProcess = textareaValue.split(/[\n,]+/) // Split by newline or comma
-        .map(s => s.trim())
-        .filter(s => s !== ""); // Filter out empty strings
+      smilesToProcess = textareaValue.split(/[\n,]+/).map(s => s.trim()).filter(s => s);
     }
 
     if (smilesToProcess.length === 0) {
-      setInputError("Please enter SMILES strings in the textarea or upload a file.");
-      setIsLoading(false);
-      return;
+      setInputError("No SMILES input. Enter in textarea or upload file.");
+      setIsLoading(false); return;
     }
-
     if (smilesToProcess.length > MAX_COMPOUNDS) {
-      setInputError(`Please limit your input to ${MAX_COMPOUNDS} compounds. You provided ${smilesToProcess.length}.`);
-      setIsLoading(false);
-      return;
+      setInputError(`Max ${MAX_COMPOUNDS} compounds allowed. You provided ${smilesToProcess.length}.`);
+      setIsLoading(false); return;
     }
 
     try {
-      const payload = {
-        compound: smilesToProcess,
-        percentage: Number(percentage)
-      };
-      
-      // Ensure this URL and port matches your running Flask backend
-      const res = await fetch('http://127.0.0.1:5328/api/predict', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const payload = { compound: smilesToProcess, percentage: Number(percentage) };
+      const res = await fetch(API_URL, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-
       const data = await res.json();
-      
-      if (!res.ok) {
-        setResult({ error: data.error || `Server responded with ${res.status} ${res.statusText}` });
-      } else {
-        setResult(data); // Store the full JSON response from backend
-      }
+      if (!res.ok) setResults({ error: data.error || `Server Error: ${res.status}` });
+      else setResults(data);
     } catch (err) {
-      setResult({ error: `Network or Parsing Error: ${err.message}` });
+      setResults({ error: `Network/Parsing Error: ${err.message}` });
     } finally {
       setIsLoading(false);
     }
   };
   
   const clearInputs = () => {
-    setTextareaValue('');
-    setSelectedFile(null);
-    setFileName('');
-    setInputError('');
-    setResult(null);
-    // Reset the file input field visually
+    setTextareaValue(''); setSelectedFile(null); setFileName('');
+    setInputError(''); setResults(null);
     const fileInput = document.getElementById('fileUpload');
-    if (fileInput) {
-      fileInput.value = null;
-    }
+    if (fileInput) fileInput.value = null;
   };
 
-
   return (
-    <div className="relative min-h-screen bg-gray-900 overflow-hidden">
-      {particles.map((particle) => (
-        <motion.div
-          key={particle.id} className="absolute rounded-full bg-blue-400 opacity-20"
-          style={{ width: `${particle.size}px`, height: `${particle.size}px`, left: `${particle.x}%`, top: `${particle.y}%`}}
-          animate={{ y: [particle.y, particle.y - (Math.random() * 20 + 10), particle.y], x: [particle.x, particle.x + (Math.random() * 10 - 5), particle.x]}}
-          transition={{ duration: 5 + particle.delay, repeat: Infinity, ease: "easeInOut"}}
-        />
-      ))}
-      <div className="absolute inset-0 bg-[url('/grid-pattern.svg')] opacity-10" />
+    <div className={`min-h-screen font-sans transition-colors duration-300 bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200`}>
+      {/* Particles Background */}
+      <AnimatePresence>
+        {particles.map((p) => (
+          <motion.div
+            key={p.id}
+            className="absolute rounded-full bg-cyan-500/20 dark:bg-cyan-400/10"
+            style={{ width: p.size, height: p.size, left: `${p.x}%`, top: `${p.y}%` }}
+            initial={{ opacity: 0, y: p.y + 20 }}
+            animate={{ opacity: 1, y: p.y - 20 }}
+            exit={{ opacity: 0 }}
+            transition={{ delay: p.delay, duration: p.duration, repeat: Infinity, repeatType: "mirror", ease: "easeInOut" }}
+          />
+        ))}
+      </AnimatePresence>
 
-      <div className="relative z-10 max-w-4xl mx-auto px-4 py-14">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8 }} className="text-center mb-12">
-          <h1 className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 to-blue-500 mb-2">
-            PKM2 Multi-Target Predictor
-          </h1>
-          <p className="text-xl text-gray-300">
-            Classify compounds (max {MAX_COMPOUNDS}) and predict pIC50 for Activators of the PKM2 Protein.
-          </p>
-        </motion.div>
+      <div className="relative z-10 container mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        {/* Header */}
+        <header className="flex justify-between items-center mb-10">
+          <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5 }}>
+            <h1 className="text-3xl sm:text-4xl font-bold text-cyan-600 dark:text-cyan-400">
+              PKM2 Target Predictor
+            </h1>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Batch classify compounds and predict AC50 for PKM2 activators.
+            </p>
+          </motion.div>
+          <motion.button
+            onClick={toggleTheme}
+            className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+            aria-label="Toggle theme"
+            initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.2 }}
+          >
+            {theme === 'light' ? <IconMoon /> : <IconSun />}
+          </motion.button>
+        </header>
 
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 0.2 }}
-          className="bg-gray-800 bg-opacity-50 backdrop-blur-lg rounded-xl p-8 border border-gray-700 shadow-2xl">
-          
-          <div className="mb-6">
-            <label htmlFor="smilesInput" className="block text-lg font-medium text-cyan-300 mb-2">
-              Enter SMILES (comma or newline separated)
-            </label>
-            <textarea
-              id="smilesInput"
-              className="w-full bg-gray-900 border border-gray-700 rounded-lg p-4 text-gray-200 font-mono focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all h-32"
-              placeholder={`e.g., C1=CC=CC=C1, O=C(N)C\nMax ${MAX_COMPOUNDS} compounds. Or upload a file below.`}
-              value={textareaValue}
-              onChange={(e) => { setTextareaValue(e.target.value); setSelectedFile(null); setFileName(''); setInputError(''); setResult(null);}}
-              disabled={isLoading}
-            />
+        {/* Input Section */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.1 }}
+          className="bg-white dark:bg-gray-800/70 backdrop-blur-md shadow-xl rounded-xl p-6 sm:p-8 border border-gray-200 dark:border-gray-700"
+        >
+          <div className="grid md:grid-cols-2 gap-6 mb-6">
+            <div>
+              <label htmlFor="smilesInput" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Enter SMILES Strings
+              </label>
+              <textarea
+                id="smilesInput" rows={6}
+                className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-cyan-500 focus:border-cyan-500 bg-gray-50 dark:bg-gray-700 text-sm font-mono placeholder-gray-400 dark:placeholder-gray-500"
+                placeholder={`CCC,CCO\nCNC(=O)C1=CN=CN1\nMax ${MAX_COMPOUNDS} compounds, separated by comma or newline.`}
+                value={textareaValue}
+                onChange={(e) => { setTextareaValue(e.target.value); setSelectedFile(null); setFileName(''); setInputError(''); setResults(null);}}
+                disabled={isLoading}
+              />
+            </div>
+            <div>
+              <label htmlFor="fileUpload" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Or Upload File
+              </label>
+              <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 dark:border-gray-600 border-dashed rounded-md hover:border-cyan-500 dark:hover:border-cyan-400 transition-colors">
+                <div className="space-y-1 text-center">
+                  
+                  <div className="flex text-sm text-gray-600 dark:text-gray-400">
+                  <IconUpload />
+                    <label htmlFor="fileUpload" className="relative cursor-pointer bg-white dark:bg-gray-700 rounded-md font-medium text-cyan-600 dark:text-cyan-400 hover:text-cyan-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 dark:focus-within:ring-offset-gray-800 focus-within:ring-cyan-500 px-1">
+                      <span>Upload a file</span>
+                      <input id="fileUpload" name="fileUpload" type="file" className="sr-only" 
+                             accept=".csv, .xlsx, .xls" onChange={handleFileChange} disabled={isLoading} />
+                    </label>
+                    <p className="pl-1">or drag and drop</p>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-500">CSV, XLSX, XLS up to 1MB. SMILES in first column.</p>
+                  {fileName && <p className="text-xs text-cyan-600 dark:text-cyan-400 mt-1">Selected: {fileName}</p>}
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div className="text-center my-4 text-gray-400 text-sm">OR</div>
-
-          <div className="mb-6">
-            <label htmlFor="fileUpload" className="block text-lg font-medium text-cyan-300 mb-2">
-              Upload File (Excel or CSV)
-            </label>
-            <input
-              id="fileUpload"
-              type="file"
-              accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
-              onChange={handleFileChange}
-              disabled={isLoading}
-              className="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-cyan-700 file:text-cyan-50 hover:file:bg-cyan-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-cyan-500 cursor-pointer"
-            />
-            {fileName && <p className="text-xs text-gray-400 mt-1">Selected file: {fileName}</p>}
-            <p className="text-xs text-gray-500 mt-1">File should contain SMILES in the first column. Max {MAX_COMPOUNDS} compounds.</p>
-          </div>
-          
           {inputError && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mb-4 p-3 bg-red-900 bg-opacity-50 rounded-lg text-red-300 text-sm">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded-md text-red-700 dark:text-red-300 text-sm">
               {inputError}
             </motion.div>
           )}
 
-          <div className="mb-8">
-            <label htmlFor="percentageSlider" className="block text-lg font-medium text-cyan-300 mb-2">
-              Confidence Interval for Regression ({percentage}%)
+          <div className="mb-6">
+            <label htmlFor="percentageSlider" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Regression Confidence Interval ({percentage}%)
             </label>
-            <input
-              id="percentageSlider" type="range" min="1" max="99" step="1" value={percentage}
-              onChange={(e) => setPercentage(e.target.value)}
-              disabled={isLoading}
-              className="w-full h-3 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-cyan-500"
+            <input id="percentageSlider" type="range" min="1" max="99" step="1" value={percentage}
+              onChange={(e) => setPercentage(e.target.value)} disabled={isLoading}
+              className="w-full h-2 bg-gray-200 dark:bg-gray-600 rounded-lg appearance-none cursor-pointer accent-cyan-500 dark:accent-cyan-400 focus:outline-none"
             />
           </div>
           
-          <div className="flex space-x-4">
-            <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={handleSubmit}
+          <div className="flex flex-col sm:flex-row gap-4">
+            <motion.button
+              onClick={handleSubmit}
               disabled={isLoading || (!textareaValue.trim() && !selectedFile)}
-              className={`flex-grow py-4 px-6 rounded-lg font-bold text-lg transition-all ${isLoading || (!textareaValue.trim() && !selectedFile) ? 'bg-gray-600 text-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-cyan-600 to-blue-600 hover:shadow-lg hover:shadow-cyan-500/20 text-white'}`}>
+              className={`w-full sm:w-auto flex-grow py-3 px-6 rounded-md font-semibold text-base transition-all duration-300 ease-in-out
+                          text-white disabled:opacity-50 disabled:cursor-not-allowed
+                          ${isLoading 
+                            ? 'bg-cyan-500 dark:bg-cyan-600 animate-pulse' 
+                            : 'bg-cyan-600 dark:bg-cyan-500 hover:bg-cyan-700 dark:hover:bg-cyan-400'
+                          }
+                          focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-800 focus:ring-cyan-500`}
+              whileHover={{ scale: isLoading ? 1 : 1.03 }}
+              whileTap={{ scale: isLoading ? 1 : 0.97 }}
+              animate={isLoading ? {
+                boxShadow: ["0 0 0px 0px rgba(6,182,212,0.0)", "0 0 8px 2px rgba(6,182,212,0.7)", "0 0 0px 0px rgba(6,182,212,0.0)"],
+              } : {}}
+              transition={isLoading ? { duration: 1.5, repeat: Infinity, ease:"linear" } : { duration: 0.15}}
+            >
               {isLoading ? (
-                <div className="flex items-center justify-center space-x-2">
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  <span>Analyzing Molecules...</span>
+                <div className="flex items-center justify-center">
+                  <div className="w-5 h-5 border-2 border-white/50 border-t-white rounded-full animate-spin mr-2" />
+                  Analyzing...
                 </div>
               ) : 'Predict Properties'}
             </motion.button>
-            <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={clearInputs}
-              disabled={isLoading}
-              className="py-4 px-6 rounded-lg font-semibold text-sm bg-gray-600 hover:bg-gray-500 text-white transition-all">
-              Clear Inputs
-            </motion.button>
+            <button onClick={clearInputs} disabled={isLoading}
+              className="w-full sm:w-auto py-3 px-6 rounded-md font-semibold text-sm bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-200 transition-colors disabled:opacity-50">
+              Clear All
+            </button>
           </div>
         </motion.div>
 
-        {/* Results Display Area */}
-        {result && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{delay:0.1}}
-            className="mt-8 bg-gray-800 bg-opacity-50 backdrop-blur-lg rounded-xl p-6 border border-gray-700">
+        {/* Results Display Section */}
+        <AnimatePresence>
+        {isLoading && !results && (
+             <motion.div 
+                key="loadingResults"
+                initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                className="mt-8 text-center text-gray-500 dark:text-gray-400">
+                Fetching results, please wait...
+             </motion.div>
+        )}
+        {results && (
+          <motion.div 
+            key="resultsContent"
+            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            className="mt-10 bg-white dark:bg-gray-800/70 backdrop-blur-md shadow-xl rounded-xl p-6 sm:p-8 border border-gray-200 dark:border-gray-700"
+          >
+            {results.error && (
+                <div className="p-4 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded-md text-red-700 dark:text-red-300">
+                    <h3 className="text-lg font-semibold mb-1">API Error</h3>
+                    <p className="text-sm">{results.error}</p>
+                </div>
+            )}
+
+            {tableData.length > 0 && (
+              <div className="mb-8">
+                <h3 className="text-xl sm:text-2xl font-semibold text-gray-800 dark:text-gray-100 mb-4">Prediction Summary Table</h3>
+                <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
+                  <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead className="bg-gray-50 dark:bg-gray-700/50">
+                      <tr>
+                        <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">#</th>
+                        <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Molecule (SMILES)</th>
+                        <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Predicted Type</th>
+                        <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Predicted AC50 (Activators)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                      {tableData.map((item, index) => (
+                        <tr key={item.smiles + index} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                          <td className="px-4 py-3 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">{index + 1}</td>
+                          <td className="px-4 py-3 whitespace-nowrap text-xs font-mono text-gray-700 dark:text-gray-300 break-all max-w-xs truncate" title={item.smiles}>{item.smiles}</td>
+                          <td className="px-4 py-3 whitespace-nowrap text-xs">
+                            <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full
+                              ${ item.type === "Activator" ? "bg-green-100 dark:bg-green-700/30 text-green-800 dark:text-green-300" :
+                                 item.type === "Inhibitor" ? "bg-amber-100 dark:bg-amber-700/30 text-amber-800 dark:text-amber-300" :
+                                 item.type === "Decoy" ? "bg-blue-100 dark:bg-blue-700/30 text-blue-800 dark:text-blue-300" :
+                                 "bg-red-100 dark:bg-red-700/30 text-red-800 dark:text-red-300"}`}>
+                              {item.type}
+                            </span>
+                          </td>
+                          <td className={`px-4 py-3 whitespace-nowrap text-xs ${item.type === 'Activator' && !item.AC50.toLowerCase().includes("error") ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-gray-500'}`}>
+                            {item.AC50}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
             
-            {result.error && ( // Top-level error from API call itself
-                <div className="p-4 bg-red-900 bg-opacity-50 rounded-lg text-red-300">
-                    <h3 className="text-xl font-semibold text-red-200 mb-2">Error</h3>
-                    <p>{result.error}</p>
+            {chartData.length > 0 && (
+              <div className="mb-8">
+                <h3 className="text-xl sm:text-2xl font-semibold text-gray-800 dark:text-gray-100 mb-4">Results Distribution</h3>
+                <div style={{ width: '100%', height: 300 }}>
+                  <ResponsiveContainer>
+                    <PieChart>
+                      <Pie data={chartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label fill="#8884d8">
+                        {chartData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={CHART_COLORS[entry.name] || '#82ca9d'} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip formatter={(value, name) => [`${value} compound(s)`, name]}/>
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
                 </div>
+              </div>
             )}
 
-            {result.classification_results && (
-              <>
-                <h3 className="text-2xl font-semibold text-cyan-300 mb-4">Analysis Results</h3>
-                <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2"> {/* Scrollable results */}
-                {Object.entries(result.classification_results).map(([smilesKey, classification]) => (
-                  <div key={smilesKey} className="p-4 bg-gray-900 rounded-lg shadow-md border border-gray-700">
-                    <p className="font-bold text-cyan-400 text-sm break-all">
-                      Input: <span className="text-gray-200 font-mono">{smilesKey.startsWith("EMPTY_INPUT_") ? "(Empty Input)" : smilesKey}</span>
-                    </p>
-                    <p className="font-medium text-gray-300">
-                      Classification: <span className={`font-semibold ${
-                        classification === "Activator" ? "text-green-400" : 
-                        classification === "Inhibitor" ? "text-orange-400" : 
-                        classification === "Decoy" ? "text-blue-400" : "text-red-400"
-                      }`}>{classification}</span>
-                    </p>
-                    
-                    {result.regression_results && result.regression_results[smilesKey] && classification === "Activator" && (
-                      <div className="mt-2 pt-2 border-t border-gray-700">
-                        <p className="font-medium text-sm text-gray-400">Regression (pIC50):</p>
-                        {result.regression_results[smilesKey].error ? (
-                          <p className="text-xs text-red-400">{result.regression_results[smilesKey].error}</p>
-                        ) : (
-                          <>
-                            <p className="text-xs text-gray-300">Median: {result.regression_results[smilesKey].regression_pIC50_median.toFixed(2)}</p>
-                            <p className="text-xs text-gray-300">
-                              {result.regression_results[smilesKey].confidence_interval_percentage}% CI: 
-                              [{result.regression_results[smilesKey].regression_pIC50_lower_bound.toFixed(2)} - {result.regression_results[smilesKey].regression_pIC50_upper_bound.toFixed(2)}]
-                            </p>
-                            {result.regression_results[smilesKey].num_regression_models_used !== undefined && (
-                               <p className="text-xs text-gray-500">(Based on {result.regression_results[smilesKey].num_regression_models_used} models)</p>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))}
-                </div>
-              </>
-            )}
-
-            {result.batch_processing_errors && result.batch_processing_errors.length > 0 && (
-              <div className="mt-6">
-                <h4 className="text-lg font-semibold text-red-400 mb-2">SMILES Processing Errors:</h4>
-                <div className="space-y-1 max-h-40 overflow-y-auto pr-2">
-                {result.batch_processing_errors.map((err, index) => (
-                  <div key={index} className="p-2 bg-red-900 bg-opacity-40 rounded text-xs">
-                    <p className="text-red-300 break-all">
-                        Input: "{err.smiles || err.input_smiles || "(unknown input)"}" <br/> Error: {err.error}
-                    </p>
+            {results.batch_processing_errors && results.batch_processing_errors.length > 0 && (
+              <div>
+                <h4 className="text-lg font-semibold text-red-600 dark:text-red-400 mb-2">SMILES Processing Errors:</h4>
+                <div className="space-y-1 max-h-40 overflow-y-auto p-3 bg-gray-50 dark:bg-gray-700/30 rounded-md border border-gray-200 dark:border-gray-600">
+                {results.batch_processing_errors.map((err, index) => (
+                  <div key={`batch-err-${index}`} className="text-xs text-red-700 dark:text-red-300">
+                    <p className="break-all"><strong>Input:</strong> "{err.smiles || err.input_smiles || "(unknown)"}" - <strong>Error:</strong> {err.error}</p>
                   </div>
                 ))}
                 </div>
               </div>
             )}
+            {tableData.length === 0 && chartData.length === 0 && !results.error && (
+                 <p className="text-center text-gray-500 dark:text-gray-400">No results to display. Submit SMILES for analysis.</p>
+            )}
           </motion.div>
         )}
-      </div>      
+        </AnimatePresence>
+      </div>
     </div>
   );
 }
