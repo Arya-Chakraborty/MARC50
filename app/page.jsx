@@ -9,7 +9,7 @@ import {
 
 // --- Configuration ---
 const MAX_COMPOUNDS = 20;
-const API_URL = ' https://honest-tuna-striking.ngrok-free.app/api/predict'; // Ensure this matches your backend
+const API_URL = 'http://127.0.0.1:5328/api/predict'; // Ensure this matches your backend
 
 // --- Helper Components / Icons ---
 const IconSun = () => (
@@ -293,27 +293,14 @@ export default function Home() {
     try {
       const payload = { compound: smilesToProcess, percentage: Number(percentage) };
       const res = await fetch(API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true',
-          'Accept': 'application/json'
-        },
-        mode: 'cors',
-        credentials: 'include',
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-
-      // Handle response
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || `Server Error: ${res.status}`);
-      }
-
       const data = await res.json();
-      setResults(data);
+      if (!res.ok) setResults({ error: data.error || `Server Error: ${res.status}` });
+      else setResults(data);
     } catch (err) {
-      setResults({ error: err.message || "Request failed" });
+      setResults({ error: `Network/Parsing Error: ${err.message}` });
     } finally {
       setIsLoading(false);
     }
