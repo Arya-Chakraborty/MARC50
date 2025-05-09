@@ -9,7 +9,7 @@ import {
 
 // --- Configuration ---
 const MAX_COMPOUNDS = 20;
-const API_URL = 'http://127.0.0.1:5328/api/predict'; // Ensure this matches your backend
+const API_URL = 'https://honest-tuna-striking.ngrok-free.app/api/predict'; // Ensure this matches your backend
 
 // --- Helper Components / Icons ---
 const IconSun = () => (
