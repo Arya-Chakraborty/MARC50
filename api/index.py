@@ -10,18 +10,7 @@ from flask_cors import CORS
 app = Flask(__name__)
 
 # CORS Configuration (user's original)
-CORS(app, resources={
-    r"/api/*": {
-        "origins": [
-            "http://localhost:3000",        # Local dev
-            "http://127.0.0.1:3000",        # Local dev
-            "https://your-frontend-domain.com",  # Production frontend
-            "http://118.185.152.167"        # User's server's IP
-        ],
-        "methods": ["OPTIONS", "POST"],
-        "allow_headers": ["Content-Type"]
-    }
-})
+CORS(app)
 
 # --- Determine Base Directory ---
 base_dir = os.path.dirname(__file__)
