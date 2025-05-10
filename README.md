@@ -1,1 +1,1 @@
-## MARC50: Modulator Activator Range Classifier - AC50
+## MARC50: Modulator Activity Range Classifier - AC50
