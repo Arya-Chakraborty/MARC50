@@ -1,1 +1,1 @@
-## MARC50: Modulator Activity Range Classifier - AC50
+## PKM2Pred: PKM2 Modulator Classifier and Confidence Interval Regressor
